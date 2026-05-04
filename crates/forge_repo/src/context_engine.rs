@@ -105,10 +105,9 @@ impl<I> ForgeContextEngineRepository<I> {
         mut request: tonic::Request<T>,
         auth_token: &ApiKey,
     ) -> Result<tonic::Request<T>> {
-        request.metadata_mut().insert(
-            "authorization",
-            format!("Bearer {}", &**auth_token).parse()?,
-        );
+        request
+            .metadata_mut()
+            .insert("authorization", format!("Bearer {}", **auth_token).parse()?);
         Ok(request)
     }
 }
@@ -116,7 +115,7 @@ impl<I> ForgeContextEngineRepository<I> {
 #[async_trait]
 impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> {
     async fn authenticate(&self) -> Result<WorkspaceAuth> {
-        let channel = self.infra.channel();
+        let channel = self.infra.channel()?;
         let mut client = ForgeServiceClient::new(channel);
         let request = tonic::Request::new(CreateApiKeyRequest { user_id: None });
 
@@ -143,7 +142,7 @@ impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> 
 
         let request = self.with_auth(request, auth_token)?;
 
-        let channel = self.infra.channel();
+        let channel = self.infra.channel()?;
         let mut client = ForgeServiceClient::new(channel);
         let response = client.create_workspace(request).await?.into_inner();
 
@@ -173,7 +172,7 @@ impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> 
 
         let request = self.with_auth(request, auth_token)?;
 
-        let channel = self.infra.channel();
+        let channel = self.infra.channel()?;
         let mut client = ForgeServiceClient::new(channel);
         let response = client.upload_files(request).await?;
 
@@ -212,7 +211,7 @@ impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> 
 
         let request = self.with_auth(request, auth_token)?;
 
-        let channel = self.infra.channel();
+        let channel = self.infra.channel()?;
         let mut client = ForgeServiceClient::new(channel);
         let response = client.search(request).await?;
 
@@ -283,7 +282,7 @@ impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> 
         let request = tonic::Request::new(ListWorkspacesRequest {});
         let request = self.with_auth(request, auth_token)?;
 
-        let channel = self.infra.channel();
+        let channel = self.infra.channel()?;
         let mut client = ForgeServiceClient::new(channel);
         let response = client.list_workspaces(request).await?;
 
@@ -306,7 +305,7 @@ impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> 
         });
         let request = self.with_auth(request, auth_token)?;
 
-        let channel = self.infra.channel();
+        let channel = self.infra.channel()?;
         let mut client = ForgeServiceClient::new(channel);
         let response = client.get_workspace_info(request).await?;
 
@@ -328,7 +327,7 @@ impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> 
 
         let request = self.with_auth(request, auth_token)?;
 
-        let channel = self.infra.channel();
+        let channel = self.infra.channel()?;
         let mut client = ForgeServiceClient::new(channel);
         let response = client.list_files(request).await?;
 
@@ -359,7 +358,7 @@ impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> 
 
         let request = self.with_auth(request, auth_token)?;
 
-        let channel = self.infra.channel();
+        let channel = self.infra.channel()?;
         let mut client = ForgeServiceClient::new(channel);
         client.delete_files(request).await?;
 
@@ -377,7 +376,7 @@ impl<I: GrpcInfra> WorkspaceIndexRepository for ForgeContextEngineRepository<I> 
 
         let request = self.with_auth(request, auth_token)?;
 
-        let channel = self.infra.channel();
+        let channel = self.infra.channel()?;
         let mut client = ForgeServiceClient::new(channel);
         client.delete_workspace(request).await?;
 

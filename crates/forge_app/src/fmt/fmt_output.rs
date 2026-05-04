@@ -24,6 +24,13 @@ impl FormatContent for ToolOperation {
                     .diff()
                     .to_string(),
             )),
+            ToolOperation::FsMultiPatch { input: _, output } => {
+                Some(ChatResponseContent::ToolOutput(
+                    DiffFormat::format(&output.before, &output.after)
+                        .diff()
+                        .to_string(),
+                ))
+            }
             ToolOperation::PlanCreate { input: _, output } => Some({
                 let title = TitleFormat::debug(format!(
                     "Create {}",
@@ -72,17 +79,7 @@ mod tests {
 
     fn fixture_environment() -> Environment {
         use fake::{Fake, Faker};
-        let max_bytes: f64 = 250.0 * 1024.0; // 250 KB
-        let fixture: Environment = Faker.fake();
-        fixture
-            .max_search_lines(25)
-            .max_search_result_bytes(max_bytes.ceil() as usize)
-            .fetch_truncation_limit(55)
-            .max_read_size(10)
-            .stdout_max_prefix_length(10)
-            .stdout_max_suffix_length(10)
-            .max_line_length(100)
-            .max_file_size(0)
+        Faker.fake()
     }
 
     #[test]
@@ -91,8 +88,7 @@ mod tests {
         let fixture = ToolOperation::FsRead {
             input: forge_domain::FSRead {
                 file_path: "/home/user/test.txt".to_string(),
-                start_line: None,
-                end_line: None,
+                range: None,
                 show_line_numbers: true,
             },
             output: ReadOutput {
@@ -114,8 +110,7 @@ mod tests {
         let fixture = ToolOperation::FsRead {
             input: forge_domain::FSRead {
                 file_path: "/home/user/test.txt".to_string(),
-                start_line: Some(2),
-                end_line: Some(4),
+                range: Some(forge_domain::FSReadRange { start_line: Some(2), end_line: Some(4) }),
                 show_line_numbers: true,
             },
             output: ReadOutput {

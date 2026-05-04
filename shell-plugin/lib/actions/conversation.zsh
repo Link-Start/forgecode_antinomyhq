@@ -3,12 +3,15 @@
 # Conversation management action handlers
 # 
 # Features:
-# - :conversation          - List and switch conversations (with fzf)
+# - :conversation          - List and switch conversations (with interactive picker)
 # - :conversation <id>     - Switch to specific conversation by ID
 # - :conversation -        - Toggle between current and previous conversation (like cd -)
 # - :clone                 - Clone current or selected conversation
 # - :clone <id>            - Clone specific conversation by ID
 # - :copy                  - Copy last assistant message to OS clipboard as raw markdown
+# - :rename <name>         - Rename the current conversation
+# - :conversation-rename   - Rename a conversation (interactive picker)
+# - :conversation-rename <id> <name> - Rename specific conversation by ID
 #
 # Helper Functions:
 # - _forge_switch_conversation <id>  - Switch to a conversation and track previous
@@ -92,55 +95,23 @@ function _forge_action_conversation() {
         return 0
     fi
     
-    # Get conversations list
-    local conversations_output
-    conversations_output=$($_FORGE_BIN conversation list --porcelain 2>/dev/null)
+    # Use Rust's built-in conversation picker with preview
+    local conversation_id
+    conversation_id=$(_forge_select conversation)
     
-    if [[ -n "$conversations_output" ]]; then
-        # Get current conversation ID if set
-        local current_id="$_FORGE_CONVERSATION_ID"
+    if [[ -n "$conversation_id" ]]; then
+        # Switch to conversation and track in history
+        _forge_switch_conversation "$conversation_id"
         
-        # Create prompt with current conversation
-        local prompt_text="Conversation ❯ "
-        local fzf_args=(
-            --prompt="$prompt_text"
-            --delimiter="$_FORGE_DELIMITER"
-            --with-nth="2,3"
-            --preview="CLICOLOR_FORCE=1 $_FORGE_BIN conversation info {1}; echo; CLICOLOR_FORCE=1 $_FORGE_BIN conversation show {1}"
-            $_FORGE_PREVIEW_WINDOW
-        )
-
-        # If there's a current conversation, position cursor on it
-        if [[ -n "$current_id" ]]; then
-            # For conversations, compare against the first field (conversation_id)
-            local index=$(_forge_find_index "$conversations_output" "$current_id" 1)
-            fzf_args+=(--bind="start:pos($index)")
-        fi
-
-        local selected_conversation
-        # Use fzf with preview showing the last message from the conversation
-        selected_conversation=$(echo "$conversations_output" | _forge_fzf --header-lines=1 "${fzf_args[@]}")
+        # Show conversation content
+        echo
+        _forge_exec conversation show "$conversation_id"
         
-        if [[ -n "$selected_conversation" ]]; then
-            # Extract the first field (UUID) - everything before the first multi-space delimiter
-            local conversation_id=$(echo "$selected_conversation" | sed -E 's/  .*//' | tr -d '\n')
-            
-            # Switch to conversation and track in history
-            _forge_switch_conversation "$conversation_id"
-            
-            # Show conversation content
-            echo
-            _forge_exec conversation show "$conversation_id"
-            
-            # Show conversation info
-            _forge_exec conversation info "$conversation_id"
-            
-            # Print log about conversation switching
-            _forge_log success "Switched to conversation \033[1m${conversation_id}\033[0m"
-            
-        fi
-    else
-        _forge_log error "No conversations found"
+        # Show conversation info
+        _forge_exec conversation info "$conversation_id"
+        
+        # Print log about conversation switching
+        _forge_log success "Switched to conversation \033[1m${conversation_id}\033[0m"
     fi
 }
 
@@ -157,40 +128,11 @@ function _forge_action_clone() {
         return 0
     fi
     
-    # Get conversations list for fzf selection
-    local conversations_output
-    conversations_output=$($_FORGE_BIN conversation list --porcelain 2>/dev/null)
+    # Use Rust's built-in conversation picker
+    local conversation_id
+    conversation_id=$(_forge_select conversation)
     
-    if [[ -z "$conversations_output" ]]; then
-        _forge_log error "No conversations found"
-        return 0
-    fi
-    
-    # Get current conversation ID if set
-    local current_id="$_FORGE_CONVERSATION_ID"
-    
-    # Create fzf interface similar to :conversation
-    local prompt_text="Clone Conversation ❯ "
-    local fzf_args=(
-        --prompt="$prompt_text"
-        --delimiter="$_FORGE_DELIMITER"
-        --with-nth="2,3"
-        --preview="CLICOLOR_FORCE=1 $_FORGE_BIN conversation info {1}; echo; CLICOLOR_FORCE=1 $_FORGE_BIN conversation show {1}"
-        $_FORGE_PREVIEW_WINDOW
-    )
-
-    # Position cursor on current conversation if available
-    if [[ -n "$current_id" ]]; then
-        local index=$(_forge_find_index "$conversations_output" "$current_id")
-        fzf_args+=(--bind="start:pos($index)")
-    fi
-
-    local selected_conversation
-    selected_conversation=$(echo "$conversations_output" | _forge_fzf --header-lines=1 "${fzf_args[@]}")
-    
-    if [[ -n "$selected_conversation" ]]; then
-        # Extract conversation ID
-        local conversation_id=$(echo "$selected_conversation" | sed -E 's/  .*//' | tr -d '\n')
+    if [[ -n "$conversation_id" ]]; then
         _forge_clone_and_switch "$conversation_id"
     fi
 }
@@ -232,6 +174,65 @@ function _forge_action_copy() {
     byte_count=$(echo -n "$content" | wc -c | tr -d ' ')
 
     _forge_log success "Copied to clipboard \033[90m[${line_count} lines, ${byte_count} bytes]\033[0m"
+}
+
+# Action handler: Rename current conversation
+# Usage: :rename <name>
+function _forge_action_rename() {
+    local input_text="$1"
+
+    echo
+
+    if [[ -z "$_FORGE_CONVERSATION_ID" ]]; then
+        _forge_log error "No active conversation. Start a conversation first or use :conversation to select one"
+        return 0
+    fi
+
+    if [[ -z "$input_text" ]]; then
+        _forge_log error "Usage: :rename <name>"
+        return 0
+    fi
+
+    _forge_exec conversation rename "$_FORGE_CONVERSATION_ID" $input_text
+}
+
+# Action handler: Rename a conversation (interactive picker or by ID)
+# Usage: :conversation-rename [<id> <name>]
+function _forge_action_conversation_rename() {
+    local input_text="$1"
+
+    echo
+
+    # If input looks like "<id> <name>", split and rename directly
+    if [[ -n "$input_text" ]]; then
+        local conversation_id="${input_text%% *}"
+        local new_name="${input_text#* }"
+
+        if [[ "$conversation_id" == "$new_name" ]]; then
+            # Only one arg provided — not enough
+            _forge_log error "Usage: :conversation-rename <id> <name>"
+            return 0
+        fi
+
+        _forge_exec conversation rename "$conversation_id" $new_name
+        return 0
+    fi
+
+    # No args — use Rust's built-in conversation picker
+    local conversation_id
+    conversation_id=$(_forge_select conversation)
+
+    if [[ -n "$conversation_id" ]]; then
+        # Prompt for new name
+        echo -n "Enter new name: "
+        read -r new_name </dev/tty
+
+        if [[ -n "$new_name" ]]; then
+            _forge_exec conversation rename "$conversation_id" $new_name
+        else
+            _forge_log error "No name provided, rename cancelled"
+        fi
+    fi
 }
 
 # Helper function to clone and switch to conversation
